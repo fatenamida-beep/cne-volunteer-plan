@@ -212,6 +212,7 @@
 
   .students-tbl input.dup-cell{background:#FBE4E1 !important; outline:1.5px solid #B0473C;}
   .students-tbl input.invalid-sid-cell{background:#FDF0DC !important; outline:1.5px solid #B5651D;}
+  .students-tbl input.mismatch-cell{background:#F1E4F7 !important; outline:1.5px solid #7B4EA3;}
 
   .settings-modal{
     display:none; position:fixed; inset:0; background:rgba(20,25,40,.5); z-index:150;
@@ -404,7 +405,7 @@
       month: '', day: '',
       ownerId: currentUser ? currentUser.id : '',
       ownerRole: currentUser ? currentUser.role : '',
-      students: Array.from({length:30}, function(){ return {sid:'', name:'', excluded:false, excludeReason:''}; })
+      students: Array.from({length:30}, function(){ return {sid:'', name:'', excluded:false, excludeReason:'', nameAutoFilled:false, sidAutoFilled:false}; })
     };
   }
 
@@ -782,6 +783,22 @@
     return null;
   }
 
+  // 등록되지 않은 학번, 학번-성명 불일치를 모아서 반환 (roster가 아직 안 불러와졌으면 빈 배열 — 검사하지 않음)
+  function findRosterWarnings(students){
+    var warnings = [];
+    if(Object.keys(roster).length === 0) return warnings;
+    students.forEach(function(s){
+      var sid = s.sid.trim(), name = s.name.trim();
+      if(!sid) return;
+      if(!roster.hasOwnProperty(sid)){
+        warnings.push('· 학번 '+sid+' — 명단에 없는 학번입니다.');
+      } else if(name && roster[sid] !== name){
+        warnings.push('· 학번 '+sid+' — 입력하신 성명("'+name+'")이 명단상 이름("'+roster[sid]+'")과 다릅니다.');
+      }
+    });
+    return warnings;
+  }
+
   // 중복된 학번+성명을 가진 입력칸들을 화면에서 빨간 테두리로 강조
   function highlightDuplicateStudents(){
     document.querySelectorAll('.students-tbl input.dup-cell').forEach(function(el){ el.classList.remove('dup-cell'); });
@@ -819,6 +836,24 @@
     });
   }
 
+  // 학번은 명단에 있지만(=유효), 적혀있는 성명이 그 학번의 실제 이름과 다른 경우를 강조.
+  // (주로 이름을 손으로 잘못 고쳐 쓴 경우를 잡아내기 위함 — 자동채움된 값은 항상 일치하므로 여기 걸리지 않는다.)
+  function highlightMismatchedNames(){
+    document.querySelectorAll('.students-tbl input.mismatch-cell').forEach(function(el){ el.classList.remove('mismatch-cell'); });
+    if(Object.keys(roster).length === 0) return;
+    draft.students.forEach(function(s, i){
+      var sid = s.sid.trim(), name = s.name.trim();
+      if(!sid || !name) return;
+      var realName = roster[sid];
+      if(realName && realName !== name){
+        var sidInput = document.querySelector('[data-srow="'+i+'"][data-sfield="sid"]');
+        var nameInput = document.querySelector('[data-srow="'+i+'"][data-sfield="name"]');
+        if(sidInput) sidInput.classList.add('mismatch-cell');
+        if(nameInput) nameInput.classList.add('mismatch-cell');
+      }
+    });
+  }
+
   function showNameCandidatePicker(anchorEl, row, nameVal, candidates){
     var old = document.getElementById('nameCandidatePicker');
     if(old) old.remove();
@@ -842,6 +877,7 @@
         e.stopPropagation();
         var pickedSid = btn.getAttribute('data-pick-sid');
         draft.students[row].sid = pickedSid;
+        draft.students[row].sidAutoFilled = true;
         var sidInput = document.querySelector('[data-srow="'+row+'"][data-sfield="sid"]');
         if(sidInput) sidInput.value = pickedSid;
         picker.remove();
@@ -986,8 +1022,8 @@
       var rec = JSON.parse(res.value);
       var savedCount = (rec.students||[]).length;
       var slotTotal = Math.min(80, Math.max(30, savedCount));
-      var students = Array.from({length:slotTotal}, function(){ return {sid:'', name:'', excluded:false, excludeReason:''}; });
-      (rec.students||[]).forEach(function(s,i){ if(i<slotTotal) students[i] = { sid:s.sid||'', name:s.name||'', excluded: !!s.excluded, excludeReason: s.excludeReason||'' }; });
+      var students = Array.from({length:slotTotal}, function(){ return {sid:'', name:'', excluded:false, excludeReason:'', nameAutoFilled:false, sidAutoFilled:false}; });
+      (rec.students||[]).forEach(function(s,i){ if(i<slotTotal) students[i] = { sid:s.sid||'', name:s.name||'', excluded: !!s.excluded, excludeReason: s.excludeReason||'', nameAutoFilled:false, sidAutoFilled:false }; });
       draft = {
         id: rec.id, type: rec.type, status: rec.status || 'final', title: rec.title, content: rec.content, area: rec.area,
         motive: rec.motive||'', teacher: rec.teacher, month: rec.month||'', day: rec.day||'',
@@ -1058,6 +1094,12 @@
       return;
     }
     if(errBox) errBox.style.display='none';
+
+    var rosterWarnings = findRosterWarnings(draft.students);
+    if(rosterWarnings.length){
+      var confirmMsg = '참가학생 명단을 다시 확인해주세요:\n\n' + rosterWarnings.join('\n') + '\n\n이대로 제출하시겠습니까?';
+      if(!confirm(confirmMsg)) return;
+    }
 
     var isNew = !draft.id;
     var id = draft.id || ('submission:' + Date.now() + '-' + Math.random().toString(36).slice(2,7));
@@ -1248,41 +1290,60 @@
       el.oninput = function(){
         var row = +el.getAttribute('data-srow');
         var field = el.getAttribute('data-sfield');
-        var oldSid = draft.students[row].sid; // 학번이 바뀌기 전 값을 먼저 기억해둔다
-        var oldName = draft.students[row].name; // 이름이 바뀌기 전 값도 기억해둔다
         draft.students[row][field] = el.value;
+
         if(field==='name'){
           el.style.fontSize = nameFontSize(el.value.length) + 'px';
-          tryAutofillSidFromName(row, el, oldName);
+          draft.students[row].nameAutoFilled = false; // 사용자가 직접 입력하고 있으므로 더 이상 '자동채움' 상태 아님
+          tryAutofillSidFromName(row, el);
         }
+
         if(field==='sid'){
+          draft.students[row].sidAutoFilled = false; // 사용자가 직접 입력하고 있으므로 더 이상 '자동채움' 상태 아님
           var sidVal = el.value.trim();
           var matchedName = roster[sidVal];
           var currentName = draft.students[row].name.trim();
-          // 지금 이름 칸이 비어있거나, 예전 학번에서 자동으로 채워졌던 이름 그대로라면(=사용자가 직접 고친 게 아니라면)
-          // 새 학번에 맞는 이름으로 다시 자동 갱신한다. 사용자가 직접 입력/수정한 이름은 그대로 둔다.
-          var wasAutoFilled = (currentName === '') || (currentName === (roster[oldSid] || ''));
-          if(matchedName && wasAutoFilled){
-            draft.students[row].name = matchedName;
+          // 이름 칸이 비어있거나, 이전 입력에서 우리가 자동으로 채워준 상태 그대로라면(=사용자가 직접 고친 적 없다면)
+          // 새 학번에 맞춰 이름을 다시 자동 갱신(또는 더 이상 안 맞으면 비움)한다.
+          // 사용자가 이름을 직접 입력/수정한 경우에는 절대 건드리지 않는다.
+          var canAutoFillName = (currentName === '') || draft.students[row].nameAutoFilled;
+          if(canAutoFillName){
             var nameInput = document.querySelector('[data-srow="'+row+'"][data-sfield="name"]');
-            if(nameInput){
-              nameInput.value = matchedName;
-              nameInput.style.fontSize = nameFontSize(matchedName.length) + 'px';
+            if(matchedName){
+              draft.students[row].name = matchedName;
+              draft.students[row].nameAutoFilled = true;
+              if(nameInput){
+                nameInput.value = matchedName;
+                nameInput.style.fontSize = nameFontSize(matchedName.length) + 'px';
+              }
+            } else if(currentName !== ''){
+              draft.students[row].name = '';
+              draft.students[row].nameAutoFilled = false;
+              if(nameInput) nameInput.value = '';
             }
           }
         }
+
         var badge = document.querySelector('.total-value');
         if(badge){ badge.textContent = draft.students.filter(function(s){return s.sid.trim()||s.name.trim();}).length + '명'; }
         highlightDuplicateStudents();
         highlightInvalidSids();
+        highlightMismatchedNames();
       };
 
       if(el.getAttribute('data-sfield')==='sid'){
         el.onblur = function(){
+          var rowIdx = +el.getAttribute('data-srow');
           var sidVal = el.value.trim();
           if(!sidVal) return;
           if(Object.keys(roster).length>0 && !roster.hasOwnProperty(sidVal)){
             showToast('등록되지 않은 학번입니다. 학번을 다시 확인해주세요. ('+sidVal+')', 'error');
+          } else {
+            var realName = roster[sidVal];
+            var typedName = draft.students[rowIdx].name.trim();
+            if(realName && typedName && realName !== typedName){
+              showToast('학번('+sidVal+')과 성명이 일치하지 않습니다. 명단상 이름은 "'+realName+'"입니다.', 'error');
+            }
           }
           // 다음 칸으로 포커스가 이동하는 브라우저 기본 동작이 먼저 끝난 뒤에 정렬·재렌더링해야
           // 탭 이동 흐름이 끊기지 않는다. 재렌더링이 방금 옮겨간 포커스를 지워버리므로,
@@ -1297,9 +1358,16 @@
       if(el.getAttribute('data-sfield')==='name'){
         el.onblur = function(){
           var row2 = +el.getAttribute('data-srow');
+          var sidVal = draft.students[row2].sid.trim();
+          var typedName = el.value.trim();
+          if(sidVal && typedName && roster.hasOwnProperty(sidVal)){
+            var realName = roster[sidVal];
+            if(realName && realName !== typedName){
+              showToast('학번('+sidVal+')과 성명이 일치하지 않습니다. 명단상 이름은 "'+realName+'"입니다.', 'error');
+            }
+          }
           // 이름 입력으로 학번이 자동완성된 경우(코드로 값이 채워져 sid 입력 이벤트가 안 남)에도
           // 이 칸을 벗어나는 시점에 정렬되도록 함
-          var sidVal = draft.students[row2].sid.trim();
           if(!sidVal) return;
           setTimeout(function(){
             sortStudentsBySid();
@@ -1318,19 +1386,35 @@
       }
     }
 
-    function tryAutofillSidFromName(row2, el, oldName){
+    function tryAutofillSidFromName(row2, el){
       var nameVal = el.value.trim();
-      if(!nameVal) return;
       var currentSid = draft.students[row2].sid.trim();
-      var oldCandidates = reverseRoster[(oldName||'').trim()] || [];
-      // 지금 학번 칸이 비어있거나, 예전 이름에서 자동으로 채워졌던 학번 그대로라면(=사용자가 직접 고친 게 아니라면)
-      // 새 이름에 맞는 학번으로 다시 자동 갱신한다. 사용자가 직접 입력/수정한 학번은 그대로 둔다.
-      var wasAutoFilled = (currentSid === '') || (oldCandidates.indexOf(currentSid) !== -1);
-      if(!wasAutoFilled) return;
+      var canAutoFillSid = (currentSid === '') || draft.students[row2].sidAutoFilled;
+      if(!canAutoFillSid) return;
+
+      if(!nameVal){
+        if(currentSid !== ''){
+          draft.students[row2].sid = '';
+          draft.students[row2].sidAutoFilled = false;
+          var sidInputClear = document.querySelector('[data-srow="'+row2+'"][data-sfield="sid"]');
+          if(sidInputClear) sidInputClear.value = '';
+        }
+        return;
+      }
+
       var candidates = reverseRoster[nameVal];
-      if(!candidates || candidates.length===0) return;
+      if(!candidates || candidates.length===0){
+        if(currentSid !== ''){
+          draft.students[row2].sid = '';
+          draft.students[row2].sidAutoFilled = false;
+          var sidInputClear2 = document.querySelector('[data-srow="'+row2+'"][data-sfield="sid"]');
+          if(sidInputClear2) sidInputClear2.value = '';
+        }
+        return;
+      }
       if(candidates.length===1){
         draft.students[row2].sid = candidates[0];
+        draft.students[row2].sidAutoFilled = true;
         var sidInput = document.querySelector('[data-srow="'+row2+'"][data-sfield="sid"]');
         if(sidInput) sidInput.value = candidates[0];
       } else {
@@ -1341,7 +1425,7 @@
 
     document.getElementById('addRowBtn').onclick = function(){
       if(draft.students.length >= 80) return;
-      draft.students = draft.students.concat([{sid:'',name:'', excluded:false, excludeReason:''}]);
+      draft.students = draft.students.concat([{sid:'',name:'', excluded:false, excludeReason:'', nameAutoFilled:false, sidAutoFilled:false}]);
       renderSheet();
     };
 
@@ -1355,13 +1439,14 @@
         if(isNaN(nb)) return -1;
         return na - nb;
       });
-      var students = Array.from({length:total}, function(){ return {sid:'', name:'', excluded:false, excludeReason:''}; });
+      var students = Array.from({length:total}, function(){ return {sid:'', name:'', excluded:false, excludeReason:'', nameAutoFilled:false, sidAutoFilled:false}; });
       filled.forEach(function(s,i){ if(i<total) students[i] = s; });
       draft.students = students;
     }
 
     highlightDuplicateStudents();
     highlightInvalidSids();
+    highlightMismatchedNames();
   }
 
   tryAutoLogin();
