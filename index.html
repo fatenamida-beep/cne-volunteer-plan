@@ -811,6 +811,13 @@
     return warnings;
   }
 
+  // 봉사활동 내용이 서술형 문장(~다)으로 끝나는지 검사 — 생기부 기재 원칙상 명사형으로 끝나야 함
+  function endsWithVerbEnding(text){
+    var t = (text||'').trim().replace(/[.!?~…]+$/g, '').trim();
+    if(!t) return false;
+    return /다$/.test(t);
+  }
+
   // 중복된 학번+성명을 가진 입력칸들을 화면에서 빨간 테두리로 강조
   function highlightDuplicateStudents(){
     document.querySelectorAll('.students-tbl input.dup-cell').forEach(function(el){ el.classList.remove('dup-cell'); });
@@ -1102,11 +1109,13 @@
       if(!draft.area) problems.push('봉사활동 영역을 선택해주세요.');
       if(!draft.content.trim()) problems.push('봉사활동 내용을 입력해주세요.');
       if(draft.content.length>50) problems.push('봉사활동 내용은 50자 이내로 입력해주세요.');
+      if(draft.content.trim() && endsWithVerbEnding(draft.content)) problems.push('봉사활동 내용은 문장(~다)이 아니라 명사형(예: ~활동, ~캠페인, ~지원)으로 끝나야 합니다.');
       if(filled.length===0) problems.push('참가학생을 1명 이상 입력해주세요.');
       if(draft.type==='학생주도 프로젝트형' && !draft.motive.trim()) problems.push('활동 동기 및 목표를 입력해주세요.');
     } else {
       if(!draft.title.trim() && !draft.teacher.trim()) problems.push('임시 저장하려면 봉사활동명 또는 지도교사 중 하나는 입력해주세요.');
       if(draft.content.length>50) problems.push('봉사활동 내용은 50자 이내로 입력해주세요.');
+      if(draft.content.trim() && endsWithVerbEnding(draft.content)) problems.push('봉사활동 내용은 문장(~다)이 아니라 명사형(예: ~활동, ~캠페인, ~지원)으로 끝나야 합니다.');
     }
 
     if(problems.length){
