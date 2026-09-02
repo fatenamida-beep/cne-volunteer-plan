@@ -285,6 +285,12 @@
     <input type="text" class="login-input" id="loginId" placeholder="나이스 아이디를 입력하세요" autocomplete="off">
     <div class="login-hint" id="loginHint">입력하신 아이디로 이전에 작성·저장한 계획서를 다시 볼 수 있어요.</div>
 
+    <div id="loginNameField" style="display:none;">
+      <label class="login-field-label">성명</label>
+      <input type="text" class="login-input" id="loginName" placeholder="본인 성명을 입력하세요" autocomplete="off" style="margin-top:4px;">
+      <div class="login-hint">제출한 계획서에 작성자 성명으로 함께 기록돼요.</div>
+    </div>
+
     <div class="login-err" id="loginErr"></div>
     <button class="login-btn" id="loginBtn">시작하기</button>
 
@@ -465,14 +471,17 @@
     loginRole = role;
     roleTeacherBtn.classList.toggle('on', role==='teacher');
     roleStudentBtn.classList.toggle('on', role==='student');
+    var loginNameField = document.getElementById('loginNameField');
     if(role==='teacher'){
       loginFieldLabel.textContent = '나이스(NEIS) 아이디';
       loginIdInput.placeholder = '나이스 아이디를 입력하세요';
       loginHint.textContent = '입력하신 나이스 아이디로 이전에 작성·저장한 계획서를 다시 볼 수 있어요.';
+      loginNameField.style.display = 'none';
     } else {
       loginFieldLabel.textContent = '이메일 주소';
       loginIdInput.placeholder = '학교 이메일 또는 본인 이메일 주소';
       loginHint.textContent = '입력하신 이메일 주소로 이전에 작성·저장한 계획서를 다시 볼 수 있어요.';
+      loginNameField.style.display = '';
     }
     loginErr.style.display = 'none';
   }
@@ -495,17 +504,26 @@
       loginErr.textContent = '올바른 이메일 주소 형식으로 입력해주세요.';
       return;
     }
+    var nameVal = '';
+    if(loginRole==='student'){
+      nameVal = document.getElementById('loginName').value.trim();
+      if(!nameVal){
+        loginErr.style.display='block';
+        loginErr.textContent = '성명을 입력해주세요.';
+        return;
+      }
+    }
     loginErr.style.display='none';
-    doLogin(loginRole, v, true);
+    doLogin(loginRole, v, true, nameVal);
   };
   loginIdInput.onkeydown = function(e){ if(e.key==='Enter'){ document.getElementById('loginBtn').click(); } };
 
-  function doLogin(role, id, persist){
-    currentUser = { role: role, id: id };
+  function doLogin(role, id, persist, name){
+    currentUser = { role: role, id: id, name: name || '' };
     loginGate.style.display = 'none';
     appEl.style.display = '';
     document.getElementById('userBadgeText').textContent =
-      (role==='teacher' ? '교사 · ' : '학생 · ') + id;
+      (role==='teacher' ? '교사 · ' : '학생 · ') + (name ? (name+' · ') : '') + id;
     // 아직 아무것도 입력하지 않은 새 계획서 상태라면, 역할에 맞는 화면으로 바로 시작
     if(!draft.id && !draft.title && !draft.teacher && !draft.content){
       draft.type = (role==='student') ? '학생주도 프로젝트형' : '학생 선발형';
@@ -534,7 +552,10 @@
         var u = JSON.parse(res.value);
         setLoginRole(u.role);
         loginIdInput.value = u.id;
-        doLogin(u.role, u.id, false);
+        if(u.name && document.getElementById('loginName')){
+          document.getElementById('loginName').value = u.name;
+        }
+        doLogin(u.role, u.id, false, u.name);
       }
     }).catch(function(){});
   }
@@ -973,6 +994,7 @@
       content: record.content || '',
       studentCount: (record.students||[]).length,
       ownerId: record.ownerId || '',
+      submitterName: record.ownerName || '',
       students: (record.students||[]).map(function(s){ return s.sid+' '+s.name; }).join(', '),
       grades: grades ? (grades+'학년') : '',
       target: target
@@ -1055,7 +1077,7 @@
       draft = {
         id: rec.id, type: rec.type, status: rec.status || 'final', title: rec.title, content: rec.content, area: rec.area,
         motive: rec.motive||'', teacher: rec.teacher, month: rec.month||'', day: rec.day||'',
-        ownerId: rec.ownerId||'', ownerRole: rec.ownerRole||'',
+        ownerId: rec.ownerId||'', ownerRole: rec.ownerRole||'', ownerName: rec.ownerName||'',
         submittedAt: rec.submittedAt,
         students: students
       };
@@ -1135,12 +1157,13 @@
     var id = draft.id || ('submission:' + Date.now() + '-' + Math.random().toString(36).slice(2,7));
     var ownerId = draft.ownerId || (currentUser ? currentUser.id : '');
     var ownerRole = draft.ownerRole || (currentUser ? currentUser.role : '');
+    var ownerName = draft.ownerName || (currentUser ? currentUser.name : '') || '';
     var record = {
       id: id, type: draft.type, status: isFinal ? 'final' : 'draft',
       teacher: draft.teacher.trim(), title: draft.title.trim(),
       content: draft.content.trim(), area: draft.area, motive: draft.motive.trim(),
       month: draft.month, day: draft.day,
-      ownerId: ownerId, ownerRole: ownerRole,
+      ownerId: ownerId, ownerRole: ownerRole, ownerName: ownerName,
       students: filled, submittedAt: isNew ? new Date().toISOString() : (draft.submittedAt || new Date().toISOString())
     };
 
