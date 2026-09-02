@@ -70,6 +70,12 @@
     border:none;
   }
   .sb-btn.primary{background:var(--mint); color:#fff;}
+  .ai-suggest-btn{
+    width:100%; margin-bottom:12px; background:linear-gradient(135deg, #6D5BD0, #9B6FD6); color:#fff;
+    border:none; font-weight:700; padding:8px 4px; font-size:12px; border-radius:6px;
+    flex:none;
+  }
+  .ai-suggest-btn:hover{opacity:.92;}
   .sb-btn.primary:hover{background:var(--mint-2);}
   .sb-btn.ghost{background:rgba(255,255,255,.08); color:#DCE3F0;}
 
@@ -297,7 +303,7 @@
     </div>
     <div id="roleHint" style="display:none; font-size:11px; color:#F0C25E; margin:-6px 0 10px;">학생 계정은 학생주도 프로젝트형만 신청할 수 있어요.</div>
 
-    <input type="text" class="sb-search" id="sbSearch" placeholder="봉사활동명 또는 지도교사 검색">
+    <button class="sb-btn ai-suggest-btn" id="aiSuggestBtn">✨ 봉사활동 추천 도우미 (Gemini)</button>
 
     <div class="sb-list" id="sbList"></div>
 
@@ -532,7 +538,6 @@
     draft.type='학생 선발형'; renderAll();
   };
   document.getElementById('seg2').onclick = function(){ draft.type='학생주도 프로젝트형'; renderAll(); };
-  document.getElementById('sbSearch').oninput = function(e){ searchQ = e.target.value; renderSidebar(); };
   document.getElementById('btnClear').onclick = function(){ draft = blankDraft(); renderAll(); };
   document.getElementById('btnAdd').onclick = function(){ saveDraft(true); };
   document.getElementById('btnDraft').onclick = function(){ saveDraft(false); };
@@ -914,6 +919,11 @@
   }
 
   var SHEET_SYNC_URL_FIXED = 'https://script.google.com/macros/s/AKfycbwVo6giYVzEfT75pIRYuLe2CZY-RzqZD5IgJQ1mGA2O2bhqisoJNjj1SJMKiLdiMt8/exec';
+  var GEM_URL = 'https://gemini.google.com/gem/1OiHZDaBI7oYRXL9KVUf8HxWqjq_xid0X?usp=sharing';
+  document.getElementById('aiSuggestBtn').onclick = function(){
+    window.open(GEM_URL, '_blank');
+  };
+
   var sheetSyncUrl = SHEET_SYNC_URL_FIXED;
 
   function computeGrades(students){
