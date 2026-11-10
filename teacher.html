@@ -536,6 +536,7 @@
   var execSummary = null;
   function progLine(r){
     if(!execSummary) return '';
+    if((r.type||'').indexOf('프로젝트')<0) return ''; // 선발형은 보고서·활동일지를 학생이 제출하지 않음
     var p = execSummary[r.id] || {report:false, logs:0, absent:0};
     return '<div class="result-prog">보고서 '+(p.report?(p.reportConfirmed?'제출·확인 완료':'제출·<b>확인 대기</b>'):'<b>미제출</b>')+' · 활동일지 '+(p.logs ? p.logs+'건' : '<b>미제출</b>')+(p.absent ? ' · 활동 안 함 '+p.absent+'명' : '')+'</div>';
   }
@@ -611,6 +612,9 @@
     document.getElementById('viewPlanBtn').classList.toggle('on', viewMode==='plan');
     document.getElementById('viewConfirmBtn').classList.toggle('on', viewMode==='confirm');
     document.getElementById('viewLogBtn').classList.toggle('on', viewMode==='log');
+    var projType = !!current && (current.type||'').indexOf('프로젝트')>=0;
+    document.getElementById('viewLogBtn').style.display = projType ? '' : 'none'; // 선발형은 '활동일지 확인' 메뉴 없음
+    if(!projType && viewMode==='log') viewMode = 'confirm';
     var isLog = viewMode==='log';
     document.getElementById('sheet').style.display = isLog ? 'none' : '';
     document.querySelector('.doc-actions').style.display = isLog ? 'none' : '';
@@ -1403,7 +1407,6 @@
 
   function applyRoleUI(){
     document.getElementById('issueBtn').style.display = '';
-    document.getElementById('viewLogBtn').style.display = '';
   }
   applyRoleUI();
 
