@@ -37,6 +37,7 @@
     font-size:14.5px; font-weight:700; cursor:pointer;
   }
   .login-err{font-size:12px; color:var(--seal); margin-bottom:10px; display:none;}
+  .login-warn{font-size:12px; color:#8A2D1C; background:#FFF1EE; border:1px solid #F0B9AD; border-radius:8px; padding:9px 11px; margin-top:12px; line-height:1.55; text-align:left;}
   .login-disclaimer{font-size:10.5px; color:#9AA6C4; text-align:center; margin-top:16px; line-height:1.5;}
 
   .toast{
@@ -171,14 +172,15 @@
   <div class="login-card">
     <div class="login-eyebrow">충남외국어고등학교 · 교내 봉사활동</div>
     <div class="login-title">학생 주도 프로젝트형 봉사활동 보고서·활동일지</div>
-    <label class="login-field-label">이메일 주소</label>
-    <input type="text" class="login-input" id="loginId" placeholder="계획서를 작성할 때 쓴 이메일 주소" autocomplete="off">
+    <label class="login-field-label">학번</label>
+    <input type="text" class="login-input" id="loginId" placeholder="학번 4자리 (예: 1101)" inputmode="numeric" maxlength="4" autocomplete="off">
     <label class="login-field-label" style="margin-top:8px;">성명</label>
     <input type="text" class="login-input" id="loginName" placeholder="본인 성명" autocomplete="off">
-    <div class="login-hint">계획서에 등록된 본인 이름으로 내 봉사활동을 찾아요.</div>
+    <div class="login-hint">계획서 참여학생 명단의 학번·이름으로 내 봉사활동을 찾아요.</div>
     <div class="login-err" id="loginErr"></div>
     <button class="login-btn" id="loginBtn">시작하기</button>
-    <div class="login-disclaimer">※ 실제 학교 계정과 연동된 인증은 아니며, 입력한 이메일·성명으로 본인 제출분을 구분하는 용도입니다.</div>
+    <div class="login-warn"><b>⚠ 주의</b><br>다른 사람의 학번·이름으로 로그인하여 내용을 수정하거나 삭제하는 것은 금지되어 있습니다. 모든 제출·수정·삭제 기록(일시, 로그인 학번, 변경 내용)이 저장되며, 문제가 확인되면 기록을 바탕으로 확인합니다.</div>
+    <div class="login-disclaimer">※ 실제 학교 계정과 연동된 인증은 아니며, 입력한 학번·성명으로 본인 제출분을 구분하는 용도입니다.</div>
   </div>
 </div>
 <div id="app" style="display:none;">
@@ -228,7 +230,7 @@
   document.getElementById('loginBtn').onclick = function(){
     var id = document.getElementById('loginId').value.trim(), nm = document.getElementById('loginName').value.trim();
     var err = document.getElementById('loginErr'); err.style.display = 'block';
-    if(!id || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(id)){ err.textContent = '올바른 이메일 주소를 입력해주세요.'; return; }
+    if(!/^\d{4}$/.test(id)){ err.textContent = '학번 4자리를 숫자로 입력해주세요. (예: 1101)'; return; }
     if(!nm){ err.textContent = '성명을 입력해주세요.'; return; }
     err.style.display = 'none'; doLogin(id, nm, true);
   };
@@ -236,7 +238,7 @@
     storageAPI.delete('my-login').catch(function(){});
     currentUser = null; execActive = false; ex = null; appEl.style.display = 'none'; loginGate.style.display = '';
   };
-  storageAPI.get('my-login').then(function(r){ var u = JSON.parse(r.value); document.getElementById('loginId').value = u.id; document.getElementById('loginName').value = u.name; doLogin(u.id, u.name, false); }).catch(function(){});
+  storageAPI.get('my-login').then(function(r){ var u = JSON.parse(r.value); if(!/^\d{4}$/.test(u.id||'')){ storageAPI.delete('my-login').catch(function(){}); return; } document.getElementById('loginId').value = u.id; document.getElementById('loginName').value = u.name; doLogin(u.id, u.name, false); }).catch(function(){});
 
   // ======================= 실행 보고 (보고서 · 활동일지 · 증빙사진 · 교사 확인) =======================
   var execMain = document.getElementById('execMain');
@@ -277,6 +279,12 @@
 
   // ---------- 1. 계획서 검색 · 선택 ----------
   // 서버(Apps Script)가 예전 버전이면 검색어를 무시하고 전체를 돌려줄 수 있어, 화면에서도 한 번 더 걸러 검색어와 맞는 것만 보여줍니다.
+  // 내 계획서인지: 참여학생 명단에 로그인한 학번이 있어야 한다 (다른 사람의 계획서는 보이지도, 열리지도 않음)
+  function isMine(r){
+    var sid = String(currentUser && currentUser.id || '').trim();
+    var list = Array.isArray(r.students) ? r.students : parseStudents(r.students);
+    return !!sid && list.some(function(st){ return String(st.sid||'').trim() === sid; });
+  }
   function matchesQuery(r, q){
     var hay = [r.title, r.teacher, r.content, r.students, r.submitterName, r.area].join(' ').toLowerCase();
     return hay.indexOf(String(q).trim().toLowerCase()) !== -1;
@@ -293,7 +301,7 @@
     fetch(SHEET_SYNC_URL_FIXED + '?q=' + encodeURIComponent(q))
       .then(function(r){ return r.json(); })
       .then(function(data){
-        var arr = (data.results||[]).filter(function(r){ return r.type==='학생주도 프로젝트형' && matchesQuery(r, q); }).map(function(r){
+        var arr = (data.results||[]).filter(function(r){ return r.type==='학생주도 프로젝트형' && isMine(r) && matchesQuery(r, q); }).map(function(r){
           return {id:r.id, title:r.title, teacher:r.teacher, students:parseStudents(r.students), submitter:r.submitterName};
         });
         var seen = {}; arr.forEach(function(r){ seen[r.id] = true; });
@@ -315,7 +323,7 @@
         ex.mode = 'team'; ex.teamSel = {};
         plan.students.forEach(function(s,i){ ex.teamSel[i] = true; });
         ex.reportMembers = plan.students.slice();
-        if(exSelfIdx() < 0 && !confirm('이 계획서의 참가학생 명단에서 "'+currentUser.name+'" 이름을 찾지 못했어요.\n그래도 계속할까요?')){ ex.plan = null; return; }
+        if(exSelfIdx() < 0){ ex.plan = null; showToast('내 계획서만 열 수 있어요. (참여학생 명단에 내 학번이 없어요)', 'error'); return; }
         ex.step = 'hub'; exSetUnit(); exLoadServer();
       }
     }
@@ -327,8 +335,9 @@
   }
 
   function exSelfIdx(){
-    var nm = (currentUser.name||'').trim();
-    for(var i=0;i<ex.plan.students.length;i++){ if(ex.plan.students[i].name.trim()===nm) return i; }
+    var nm = (currentUser.name||'').trim(), id = String(currentUser.id||'').trim(), i;
+    for(i=0;i<ex.plan.students.length;i++){ var st = ex.plan.students[i]; if(String(st.sid||'').trim()===id && st.name.trim()===nm) return i; }
+    for(i=0;i<ex.plan.students.length;i++){ if(String(ex.plan.students[i].sid||'').trim()===id) return i; }
     return -1;
   }
 
@@ -415,7 +424,7 @@
   function basePayload(action, kind){
     var isReport = kind==='report';
     return { action:action, planId:ex.plan.id, title:ex.plan.title, mode:isReport ? 'team' : ex.mode, unitKey:isReport ? 'team' : ex.unitKey,
-      submitterId:currentUser.id, submitterName:currentUser.name||currentUser.id, members:isReport ? ex.reportMembers : ex.members };
+      submitterId:currentUser.id, submitterName:currentUser.name||currentUser.id, members:isReport ? ex.reportMembers : ex.members, ua:(navigator.userAgent||'').slice(0,200) };
   }
 
   function exSubmitReport(){
@@ -649,21 +658,22 @@
 
   function exHomeHtml(){
     return '<div class="ex-card"><h3>무엇을 할까요?</h3><div class="ex-note" style="margin-bottom:10px;">'+esc(currentUser.name)+' 학생, 원하는 메뉴를 골라주세요.</div>'
+      + '<div class="ex-warn"><b>⚠ 주의</b> 다른 사람의 학번·이름으로 로그인하여 내용을 수정·삭제하면 안 돼요. 모든 제출·수정·삭제 기록(일시, 로그인 학번, 변경 내용)이 저장돼요.</div>'
       + '<div class="ex-menu"><button class="ex-menu-btn" data-act="menuReport"><span class="ic">✍️</span><b>보고서·활동일지 작성</b><span>봉사활동을 마친 뒤 보고서와 활동일지를 제출해요.</span></button>'
       + '<button class="ex-menu-btn" data-act="menuPlans"><span class="ic">📋</span><b>봉사활동 계획서 조회</b><span>제출된 내 봉사활동 계획서를 확인해요.</span></button></div></div>';
   }
   function exSearchPlans(){
     ex.plansLoading = true; ex.plansMsg = ''; exRender();
-    var q = currentUser.name;
+    var q = currentUser.id;
     fetch(SHEET_SYNC_URL_FIXED + '?q=' + encodeURIComponent(q))
       .then(function(r){ return r.json(); })
-      .then(function(data){ ex.plans = (data.results||[]).filter(function(r){ return matchesQuery(r, q); }); })
+      .then(function(data){ ex.plans = (data.results||[]).filter(function(r){ return isMine(r) && matchesQuery(r, q); }); })
       .catch(function(){ ex.plans = []; ex.plansMsg = '구글 시트에서 계획서를 불러오지 못했어요. 잠시 후 다시 시도해주세요.'; })
       .then(function(){ ex.plansLoading = false; exRender(); });
   }
   function exPlansHtml(){
     var h = '<div class="ex-actions" style="margin:0 0 10px;"><button class="ex-btn ghost" data-act="goHome">← 처음으로</button></div>'
-      + '<div class="ex-card"><h3>봉사활동 계획서 조회</h3><div class="ex-note">'+esc(currentUser.name)+' 학생이 작성자이거나 참여학생으로 들어 있는 계획서예요. 항목을 누르면 내용을 볼 수 있어요.</div>'
+      + '<div class="ex-card"><h3>봉사활동 계획서 조회</h3><div class="ex-note">'+esc(currentUser.name)+' 학생(학번 '+esc(currentUser.id)+')이 참여학생으로 들어 있는 계획서예요. 항목을 누르면 내용을 볼 수 있어요.</div>'
       + '<div class="ex-note" style="margin-top:6px;"><span class="ex-tp proj">프로젝트형</span> 학생 주도 프로젝트형 &nbsp; <span class="ex-tp sel">선발형</span> 학생 선발형</div></div>';
     if(ex.plansLoading) h += '<div class="ex-note">불러오는 중…</div>';
     if(ex.plansMsg) h += '<div class="ex-warn">'+esc(ex.plansMsg)+'</div>';
@@ -739,7 +749,7 @@
     h += '<div class="ex-card"><h3>'+(teacher ? '확인할 계획서 찾기' : '실행 보고를 할 계획서 선택')+'</h3>';
     h += '<div class="ex-note" style="margin-bottom:8px;">'+(teacher
       ? '지도교사 이름, 봉사활동명, 학생 이름으로 검색하세요. (학생 주도 프로젝트형만 표시)'
-      : '제출 완료된 학생 주도 프로젝트형 계획서가 표시돼요. 봉사활동명과 참여학생 명단은 계획서에서 자동으로 불러옵니다.')+'</div>';
+      : '내가 참여학생으로 들어 있는 제출 완료된 학생 주도 프로젝트형 계획서만 표시돼요. 봉사활동명과 참여학생 명단은 계획서에서 자동으로 불러옵니다.')+'</div>';
     h += '<div class="ex-row"><input class="ex-input" id="exQ" style="flex:1; min-width:200px;" placeholder="검색어" value="'+esc(ex.q)+'"><button class="ex-btn" data-act="search">검색</button></div></div>';
     if(ex.loading) h += '<div class="ex-note">불러오는 중…</div>';
     if(ex.msg) h += '<div class="ex-warn">'+esc(ex.msg)+'</div>';
@@ -1153,7 +1163,7 @@
     }
     var t = e.target.closest('[data-act]'); if(!t) return;
     var act = t.getAttribute('data-act'), i = +t.getAttribute('data-i');
-    if(act==='menuReport'){ ex.step = 'pick'; exRender(); if(!ex.results) exSearch(currentUser.name); }
+    if(act==='menuReport'){ ex.step = 'pick'; exRender(); if(!ex.results) exSearch(currentUser.id); }
     else if(act==='menuPlans'){ ex.step = 'plans'; exRender(); if(!ex.plans) exSearchPlans(); }
     else if(act==='goHome'){ ex.step = 'home'; exRender(); }
     else if(act==='viewPlan'){ ex.planView = ex.plans[i]; ex.step = 'plandetail'; exRender(); }
