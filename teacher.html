@@ -392,7 +392,7 @@
   var current = null; // { id, type, title, teacher, area, content, students:[{sid,name,excluded,excludeReason}] }
 
   function esc(s){
-    return (s||'').replace(/[&<>"']/g, function(c){
+    return String(s==null ? '' : s).replace(/[&<>"']/g, function(c){
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
     });
   }
