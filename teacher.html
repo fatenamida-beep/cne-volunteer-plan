@@ -1546,13 +1546,20 @@
     return { css: screenAndPrintCSS, html: sheetEl.outerHTML };
   }
 
+  // 인쇄: 새 창(팝업)은 전송이 끝난 뒤에 열면 브라우저가 막는 경우가 있어서, 같은 쪽 안의 숨은 인쇄 틀(iframe)로 인쇄한다.
+  // (팝업이 막히면 자동맞춤 없이 화면 그대로 인쇄돼서 2장으로 넘어가던 문제가 있었다.)
   function printSheet(){
     if(!current){ return; }
     var built = buildPrintables();
-    var w = window.open('', '_blank');
-    if(!w){ window.print(); return; }
-    w.document.open();
-    w.document.write(
+    var old = document.getElementById('__print_frame__');
+    if(old && old.parentNode) old.parentNode.removeChild(old);
+    var f = document.createElement('iframe');
+    f.id = '__print_frame__';
+    f.style.cssText = 'position:fixed; left:-10000px; top:0; width:794px; height:1123px; border:0; opacity:0; pointer-events:none;';
+    document.body.appendChild(f);
+    var d = f.contentDocument;
+    d.open();
+    d.write(
       '<!DOCTYPE html><html><head><meta charset="utf-8">'+
       '<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">'+
       '<title>봉사활동 확인서</title><style>'+built.css+'body{background:#fff;margin:0;}'+
@@ -1560,12 +1567,17 @@
       '@media print{html,body{height:274mm !important; overflow:hidden !important;} .sheet{break-after:avoid; page-break-after:avoid; break-inside:avoid; overflow:hidden;}}'+ /* 어떤 경우에도 1장만 */
       '</style></head><body>'+built.html+'</body></html>'
     );
-    w.document.close();
+    d.close();
     setTimeout(function(){
-      flattenFormFieldsForCanvas(w.document);
-      autoFitSheet(w.document);
-      w.focus();
-      w.print();
+      try{
+        flattenFormFieldsForCanvas(d);
+        autoFitSheet(d);
+        f.contentWindow.focus();
+        f.contentWindow.print();
+      }catch(err){
+        window.print(); // 최후의 수단
+      }
+      setTimeout(function(){ if(f.parentNode) f.parentNode.removeChild(f); }, 120000);
     }, 700);
   }
   document.getElementById('printBtn').onclick = printSheet;
