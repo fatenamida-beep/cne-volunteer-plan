@@ -1541,6 +1541,8 @@
 
   function buildPrintables(){
     var sheetEl = document.getElementById('sheet');
+    // 입력칸에 방금 친 글자는 outerHTML에 담기지 않으므로(속성이 아니라 현재 값이라서) 먼저 속성으로 옮겨 둔다
+    sheetEl.querySelectorAll('input').forEach(function(el){ el.setAttribute('value', el.value); });
     var styleContent = document.querySelector('style').innerHTML;
     var screenAndPrintCSS = styleContent.replace('@media print{', '@media screen, print{');
     return { css: screenAndPrintCSS, html: sheetEl.outerHTML };
