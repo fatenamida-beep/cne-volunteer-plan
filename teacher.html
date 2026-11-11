@@ -1655,10 +1655,8 @@
   }
 
   // [전송 및 인쇄]: 구글 시트에 발급 기록을 먼저 보내고, 전송에 성공했을 때만 인쇄 창을 연다.
-  document.getElementById('issueBtn').onclick = function(){
-    if(!current || !current.id){ return; }
+  function doIssue(){
     var btn = document.getElementById('issueBtn');
-    if(btn.disabled) return;
     var label = btn.textContent;
     btn.disabled = true; btn.textContent = '전송 중…';
     var payload = {
@@ -1683,6 +1681,33 @@
     }).catch(function(){
       btn.disabled = false; btn.textContent = label;
       showToast('전송에 실패해서 인쇄하지 않았어요. 인터넷 연결을 확인하고 다시 눌러주세요.', 'error');
+    });
+  }
+  // 발급 전 점검: 서류가 비었거나 교사 확인이 안 끝났으면 경고만 띄운다(교사가 확인하면 발급 가능).
+  function issueCheck(){
+    if((current.type||'').indexOf('프로젝트')<0) return Promise.resolve([]); // 선발형은 보고서·일지 없음
+    return fetch(SHEET_SYNC_URL_FIXED + '?exec=' + encodeURIComponent(current.id)).then(function(r){ return r.json(); }).then(function(d){
+      var reps = d.reports||[], logs = d.logs||[], w = [];
+      if(!reps.length) w.push('보고서가 제출되지 않았어요.');
+      else if(reps.some(function(x){ return !x.confirmed; })) w.push('보고서에 교사 확인이 안 되어 있어요.');
+      var active = logs.filter(function(l){ return !l.absent; }), nTot = 0, nDone = 0;
+      active.forEach(function(l){ (l.entries||[]).forEach(function(e){ nTot++; if(e.confirmed) nDone++; }); });
+      if(!logs.length) w.push('활동일지가 제출되지 않았어요.');
+      else if(nTot > nDone) w.push('활동일지 '+(nTot-nDone)+'개 차시에 교사 확인이 안 되어 있어요. (전체 '+nTot+'개 중 '+nDone+'개 확인)');
+      return w;
+    }).catch(function(){ return null; });
+  }
+  document.getElementById('issueBtn').onclick = function(){
+    if(!current || !current.id){ return; }
+    var btn = document.getElementById('issueBtn');
+    if(btn.disabled) return;
+    var label = btn.textContent;
+    btn.disabled = true; btn.textContent = '확인 중…';
+    issueCheck().then(function(w){
+      btn.disabled = false; btn.textContent = label;
+      if(w === null){ if(!confirm('보고서·활동일지 제출 및 확인 상태를 불러오지 못했어요.\n그래도 확인서를 발급할까요?')) return; }
+      else if(w.length){ if(!confirm('서류가 완성되지 않았어요.\n\n- '+w.join('\n- ')+'\n\n그래도 확인서를 발급할까요?\n(제출현황에는 "발급됨(서류 미비)"로 표시돼요.)')) return; }
+      doIssue();
     });
   };
   try{ var saved = JSON.parse(localStorage.getItem('cne-confirm-login')||'null');
