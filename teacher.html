@@ -119,6 +119,7 @@
   .total-row .total-label{font-weight:700; text-align:center; background:#F7F7F5;}
   .total-row .total-value{font-weight:700; text-align:center;}
 
+  @media print { #verTag{display:none !important;} }
   .exclude-x{
     border:none; background:none; color:#B0473C; font-size:11px; font-weight:700; cursor:pointer;
     margin-left:3px; padding:0 2px; line-height:1; vertical-align:middle;
@@ -1739,5 +1740,6 @@
     if(saved && saved.id && saved.name){ document.getElementById('loginId').value = saved.id; document.getElementById('loginName').value = saved.name; doLogin(saved.id, saved.name, false); } }catch(e){}
 })();
 </script>
+<div id="verTag" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#999;z-index:5;">버전 11.11-3 (제외사유 출력 수정)</div>
 </body>
 </html>
