@@ -134,11 +134,11 @@
   .add-panel-row button{border:none; background:var(--mint); color:#fff; font-size:12px; font-weight:700; padding:7px 14px; border-radius:6px; cursor:pointer;}
   .add-panel-note{font-size:10.5px; color:var(--ink-soft); margin-top:6px; line-height:1.5;}
   .add-tag{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:var(--mint); border-radius:6px; padding:0 4px; margin-left:3px; vertical-align:middle;}
-  .exclude-panel{margin-top:10px; border:1px solid #E3B7B0; background:#FBF3F2; border-radius:6px; padding:10px 12px;}
-  .exclude-panel-title{font-size:11.5px; font-weight:700; color:#B0473C; margin-bottom:6px;}
-  .exclude-panel-row{display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:11.5px;}
-  .exclude-panel-row:last-child{margin-bottom:0;}
-  .exclude-panel-name{width:120px; flex-shrink:0; color:var(--ink);}
+  /* 제외 학생이 많아도 세로로 길어지지 않도록 3열로 나란히 배치 */
+  .exclude-panel{margin-top:10px; border:1px solid #E3B7B0; background:#FBF3F2; border-radius:6px; padding:8px 12px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); column-gap:14px; row-gap:4px;}
+  .exclude-panel-title{grid-column:1 / -1; font-size:11.5px; font-weight:700; color:#B0473C; margin-bottom:2px;}
+  .exclude-panel-row{display:flex; align-items:center; gap:6px; margin:0; font-size:11px; min-width:0;}
+  .exclude-panel-name{width:auto; max-width:48%; flex-shrink:0; white-space:nowrap; color:var(--ink);}
   .exclude-reason-input{
     flex:1; border:1px solid #E3B7B0; border-radius:5px; padding:5px 8px; font-size:11.5px;
     font-family:inherit; background:#fff;
