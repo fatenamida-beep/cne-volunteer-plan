@@ -134,13 +134,13 @@
   .add-panel-row button{border:none; background:var(--mint); color:#fff; font-size:12px; font-weight:700; padding:7px 14px; border-radius:6px; cursor:pointer;}
   .add-panel-note{font-size:10.5px; color:var(--ink-soft); margin-top:6px; line-height:1.5;}
   .add-tag{display:inline-block; font-size:9px; font-weight:800; color:#fff; background:var(--mint); border-radius:6px; padding:0 4px; margin-left:3px; vertical-align:middle;}
-  /* 제외 학생이 많아도 세로로 길어지지 않도록 3열로 나란히 배치 */
-  .exclude-panel{margin-top:10px; border:1px solid #E3B7B0; background:#FBF3F2; border-radius:6px; padding:8px 12px; display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); column-gap:14px; row-gap:4px;}
+  /* 제외 학생이 많아도 세로로 길어지지 않도록 4열로 나란히 배치 */
+  .exclude-panel{margin-top:10px; border:1px solid #E3B7B0; background:#FBF3F2; border-radius:6px; padding:8px 12px; display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); column-gap:10px; row-gap:3px;}
   .exclude-panel-title{grid-column:1 / -1; font-size:11.5px; font-weight:700; color:#B0473C; margin-bottom:2px;}
-  .exclude-panel-row{display:flex; align-items:center; gap:6px; margin:0; font-size:11px; min-width:0;}
-  .exclude-panel-name{width:auto; max-width:48%; flex-shrink:0; white-space:nowrap; color:var(--ink);}
+  .exclude-panel-row{display:flex; align-items:flex-start; gap:4px; margin:0; font-size:10.5px; line-height:1.35; min-width:0;}
+  .exclude-panel-name{width:auto; max-width:60%; flex-shrink:0; white-space:nowrap; color:var(--ink);}
   .exclude-reason-input{
-    flex:1; border:1px solid #E3B7B0; border-radius:5px; padding:5px 8px; font-size:11.5px;
+    flex:1; min-width:0; border:1px solid #E3B7B0; border-radius:5px; padding:3px 6px; font-size:10.5px;
     font-family:inherit; background:#fff;
   }
 
@@ -177,6 +177,9 @@
     .students-tbl .idx{font-size:11.5px;}
     .exclude-x{display:none;}
     .exclude-panel{border-color:#333; background:#fff;}
+    /* 인쇄: 이름 뒤에 사유를 이어 쓰고, 길면 이름 아래로 자연스럽게 줄바꿈 */
+    .exclude-panel-row{display:block !important;}
+    .exclude-panel-name{display:inline !important; max-width:none !important; margin-right:4px; font-weight:600;}
     .exclude-reason-input{border:none; padding:2px 0; background:transparent;}
     .statement{margin:16px 0 8px; font-size:12.5px; line-height:1.9;}
     .sign-row{margin-bottom:10px; font-size:12.5px;}
@@ -1499,7 +1502,10 @@
       if(actualH <= maxHeightPx) return;
       var overflowRatio = actualH / maxHeightPx;
       var nextScale = Math.max(0.8, scale / overflowRatio * 0.97);
-      if(nextScale >= scale){ nextScale = scale * 0.9; }
+      if(nextScale >= scale){
+        if(scale <= 0.8) break; // 학번·성명 글씨가 0.8배보다 작아지지 않게 하고, 나머지는 쪽 전체 축소로 맞춘다
+        nextScale = Math.max(0.8, scale * 0.9);
+      }
       scale = nextScale;
     }
     applyTableScale(doc, scale);
@@ -1509,7 +1515,7 @@
     try{
       var target = doc.querySelector('.sheet');
       var mmToPx = 96 / 25.4;
-      var maxHeightPx = 277 * mmToPx * 0.93;
+      var maxHeightPx = 277 * mmToPx * 0.92;
       fitStudentsTable(doc, target, maxHeightPx);
       var actualH = target.scrollHeight;
       if(actualH > maxHeightPx){
@@ -1525,9 +1531,10 @@
       var span = doc.createElement('span');
       span.className = el.className;
       span.textContent = el.value || '';
-      span.style.display = 'inline-block';
-      span.style.width = el.style.width ? el.style.width : '100%';
-      span.style.whiteSpace = 'pre';
+      span.style.display = 'inline';
+      span.style.whiteSpace = 'normal';
+      span.style.wordBreak = 'keep-all';
+      span.style.overflowWrap = 'anywhere';
       el.parentNode.replaceChild(span, el);
     });
   }
@@ -1548,10 +1555,14 @@
     w.document.write(
       '<!DOCTYPE html><html><head><meta charset="utf-8">'+
       '<meta name="format-detection" content="telephone=no, date=no, address=no, email=no">'+
-      '<title>봉사활동 확인서</title><style>'+built.css+'body{background:#fff;margin:0;}</style></head><body>'+built.html+'</body></html>'
+      '<title>봉사활동 확인서</title><style>'+built.css+'body{background:#fff;margin:0;}'+
+      '.sheet{width:190mm !important; max-width:190mm !important; box-sizing:border-box !important; margin:0 !important;}'+ /* 인쇄 폭과 같게 맞춰서 측정 */
+      '@media print{html,body{height:274mm !important; overflow:hidden !important;} .sheet{break-after:avoid; page-break-after:avoid; break-inside:avoid; overflow:hidden;}}'+ /* 어떤 경우에도 1장만 */
+      '</style></head><body>'+built.html+'</body></html>'
     );
     w.document.close();
     setTimeout(function(){
+      flattenFormFieldsForCanvas(w.document);
       autoFitSheet(w.document);
       w.focus();
       w.print();
@@ -1596,13 +1607,13 @@
     }
 
     setTimeout(function(){
+      flattenFormFieldsForCanvas(idoc);
       var target = autoFitSheet(idoc);
       if(!target || typeof html2canvas==='undefined' || !window.jspdf){
         cleanup();
         alert('PDF 생성 기능을 불러오지 못했습니다. "인쇄" 버튼을 이용해 PDF로 저장해주세요.');
         return;
       }
-      flattenFormFieldsForCanvas(idoc);
       html2canvas(target, { scale: 2, useCORS: true, backgroundColor: '#ffffff', foreignObjectRendering: true }).then(function(canvas){
         var imgData = canvas.toDataURL('image/png');
         var jsPDF = window.jspdf.jsPDF;
