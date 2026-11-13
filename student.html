@@ -430,8 +430,9 @@
   function exSubmitReport(){
     var r = ex.report, p = null;
     var absR = (r.absentMembers||[]).filter(function(a){ return ex.reportMembers.some(function(m){ return pkey(m)===pkey(a); }); });
+    var allAbs = absR.length > 0 && absR.length >= ex.reportMembers.length;
     if(absR.some(function(a){ return !(a.reason||'').trim(); })) p = '활동 안 함으로 표시한 학생의 사유를 적어주세요.';
-    else if(absR.length && absR.length >= ex.reportMembers.length) p = '모든 학생이 활동 안 함이면 보고서를 제출할 수 없어요.';
+    else if(allAbs){ /* 모든 학생이 활동 안 함: 동기·내용·소감·사진 없이 사유만으로 제출 가능 */ }
     else if(!r.motive.trim()) p = '봉사에 참여하게 된 동기를 입력해주세요.';
     else if(!r.content.trim()) p = '봉사한 내용을 입력해주세요.';
     else if(!r.reflection.trim()) p = '봉사에 참여한 소감을 입력해주세요.';
@@ -440,8 +441,8 @@
     if(p){ ex.err = p; exRender(); showToast(p, 'error'); return; }
     var payload = basePayload('report_submit', 'report');
     payload.absentMembers = absR.map(function(a){ return {sid:a.sid, name:a.name, reason:a.reason.trim()}; });
-    payload.motive = r.motive.trim(); payload.content = r.content.trim(); payload.reflection = r.reflection.trim();
-    var pp = photoPayload(r.photos); payload.keepPhotoIds = pp.keepPhotoIds; payload.newPhotos = pp.newPhotos;
+    payload.motive = allAbs ? '' : r.motive.trim(); payload.content = allAbs ? '' : r.content.trim(); payload.reflection = allAbs ? '' : r.reflection.trim();
+    var pp = allAbs ? {keepPhotoIds:[], newPhotos:[]} : photoPayload(r.photos); payload.keepPhotoIds = pp.keepPhotoIds; payload.newPhotos = pp.newPhotos;
     var startTs = Date.now() - 60000;
     ex.busy = true; ex.err = ''; exRender();
     exPost(payload).then(function(){
@@ -509,7 +510,22 @@
     var ens = ex.log.entries.filter(function(en){ return !isBlank(en); }), p = null, total = 0;
     var absM = ex.mode==='team' ? (ex.log.absentMembers||[]).filter(function(a){ return ex.members.some(function(m){ return pkey(m)===pkey(a); }); }) : [];
     if(absM.some(function(a){ return !(a.reason||'').trim(); })) p = '활동 안 함으로 표시한 팀원의 사유를 적어주세요.';
-    else if(absM.length && absM.length >= ex.members.length) p = '팀원 모두가 활동 안 함이면 각자 개인 일지에서 "활동 안 함"으로 제출해주세요.';
+    else if(absM.length && absM.length >= ex.members.length){
+      // 팀원 모두가 활동 안 함: 차시 없이 사유만으로 제출
+      var tp = basePayload('log_submit', 'log'); tp.entries = []; tp.absent = true;
+      tp.absentMembers = absM.map(function(a){ return {sid:a.sid, name:a.name, reason:a.reason.trim()}; });
+      tp.absentReason = absM.map(function(a){ return a.name+': '+a.reason.trim(); }).join(' / ');
+      var tTs = Date.now() - 60000;
+      ex.busy = true; ex.err = ''; exRender();
+      exPost(tp).then(function(){
+        return exVerify(function(){ var s = srvLog(); return s && s.absent && new Date(s.submittedAt).getTime() >= tTs; });
+      }).then(function(ok){
+        storageAPI.delete(draftKey('log'), false).catch(function(){});
+        ex.step = 'hub'; ex.busy = false; exRender();
+        showToast(ok ? '"활동 안 함"으로 제출되었어요.' : '전송은 했지만 시트에서 아직 확인되지 않았어요. 잠시 후 다시 열어 확인해주세요.', ok ? 'success' : 'error');
+      });
+      return;
+    }
     if(!p && !ens.length){ p = '작성한 차시가 없어요. 최소 1개 차시의 내용을 입력해주세요.'; }
     for(var i=0;i<ens.length && !p;i++){
       var en = ens[i]; if(en.confirmed) continue;
@@ -982,7 +998,7 @@
 
   function repAbsentOf(m){ return ((ex.report&&ex.report.absentMembers)||[]).filter(function(a){ return pkey(a)===pkey(m); })[0] || null; }
   function reportMembersHtml(){
-    var h = '<div class="ex-note" style="margin-bottom:6px;">활동에 참여하지 못한 학생은 "활동 안 함"을 체크하고 사유를 적어주세요.</div><div class="ex-absent'+(((ex.report.absentMembers||[]).length)?' on':'')+'">';
+    var h = '<div class="ex-note" style="margin-bottom:6px;">활동에 참여하지 못한 학생은 "활동 안 함"을 체크하고 사유를 적어주세요. 모든 학생이 체크되면 동기·내용·소감·사진 없이 사유만으로 제출할 수 있어요.</div><div class="ex-absent'+(((ex.report.absentMembers||[]).length)?' on':'')+'">';
     ex.reportMembers.forEach(function(m,j){
       var a = repAbsentOf(m);
       h += '<div style="margin:5px 0; display:flex; flex-wrap:wrap; gap:8px; align-items:center;"><span style="min-width:130px;"><b>'+esc(m.sid)+'</b> '+esc(m.name)+'</span>'
@@ -1059,7 +1075,7 @@
   function absentOf(m){ return ((ex.log&&ex.log.absentMembers)||[]).filter(function(a){ return pkey(a)===pkey(m); })[0] || null; }
   function teamAbsentHtml(){
     var h = '<div class="ex-absent'+(((ex.log.absentMembers||[]).length)?' on':'')+'"><b>활동 안 함 선택 (팀원 중 활동하지 못한 학생)</b>'
-      + '<div class="ex-note">활동에 참여하지 못한 팀원은 체크하고 사유를 적어주세요. 체크한 학생은 아래 차시 참여자 목록에서 빠져요.</div><div style="margin-top:6px;">';
+      + '<div class="ex-note">활동에 참여하지 못한 팀원은 체크하고 사유를 적어주세요. 체크한 학생은 아래 차시 참여자 목록에서 빠져요. 팀원 모두가 활동하지 않았다면 모두 체크하고 사유만 적어 제출하면 돼요.</div><div style="margin-top:6px;">';
     ex.members.forEach(function(m,j){
       var a = absentOf(m);
       h += '<div style="margin:4px 0;"><label><input type="checkbox" data-am="'+j+'" '+(a?'checked':'')+'> '+esc(m.sid)+' '+esc(m.name)+' <span class="ex-note">활동 안 함</span></label>'
