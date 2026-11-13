@@ -120,6 +120,8 @@
   .total-row .total-value{font-weight:700; text-align:center;}
 
   @media print { #verTag{display:none !important;} }
+  .auto-note{margin:4px 0 6px; font-size:11px; color:#8A5A12; background:#FFF6E0; border:1px solid #F0D9A0; border-radius:6px; padding:5px 8px;}
+  .auto-tag{font-size:10px; color:#8A5A12; background:#FFF6E0; border:1px solid #F0D9A0; border-radius:8px; padding:0 5px; margin-left:3px; white-space:nowrap;}
   .exclude-x{
     border:none; background:none; color:#B0473C; font-size:11px; font-weight:700; cursor:pointer;
     margin-left:3px; padding:0 2px; line-height:1; vertical-align:middle;
@@ -177,6 +179,7 @@
     .students-tbl th{font-size:11.5px; padding:4px 2px;}
     .students-tbl .idx{font-size:11.5px;}
     .exclude-x{display:none;}
+    .auto-note,.auto-tag{display:none !important;}
     .exclude-panel{border-color:#333; background:#fff; grid-template-columns:repeat(4, minmax(0,1fr)) !important;}
     /* 인쇄: 이름 뒤에 사유를 이어 쓰고, 길면 이름 아래로 자연스럽게 줄바꿈 */
     .exclude-panel-row{display:block !important;}
@@ -610,6 +613,40 @@
     document.getElementById('results').style.display = 'none';
     document.getElementById('docView').style.display = '';
     renderSheet();
+    autoExcludeAbsent(r);
+  }
+
+  // 학생이 보고서·활동일지에서 '활동 안 함'으로 제출한 학생을 확인서에서 자동으로 제외(사유 '활동 미실시').
+  // - 아직 확인서를 발급하지 않은 프로젝트형 계획서에서만, 교사 로그인 상태에서만 적용
+  // - 일지에 실제 활동(차시)이 있는 학생은 제외하지 않음
+  // - 교사가 이미 만진 학생(제외/복구/사유 수정)은 건드리지 않음
+  function autoExcludeAbsent(r){
+    if(siteRole !== 'teacher' || menuMode === 'plans') return;
+    if((r.type||'').indexOf('프로젝트') < 0) return;
+    if((r.finalDocStatus||'').indexOf('확인서') >= 0) return;
+    var planId = r.id;
+    fetch(SHEET_SYNC_URL_FIXED + '?exec=' + encodeURIComponent(planId))
+      .then(function(x){ return x.json(); })
+      .then(function(d){
+        if(!current || current.id !== planId) return;
+        var S = { reports: d.reports||[], logs: d.logs||[] };
+        var changed = 0;
+        current.students.forEach(function(s){
+          if(s.excluded || s.touched || s.added) return;
+          var real = false, ab = false;
+          lgStudentLogs(S, s).forEach(function(l){
+            if(l.absent){ ab = true; return; }
+            var am = (l.absentMembers||[]).filter(function(a){ return (a.sid && a.sid===s.sid) || (!a.sid && a.name===s.name); })[0];
+            if(am) ab = true; else real = true;
+          });
+          if(!real && !ab){
+            ab = S.reports.some(function(rp){ return (rp.absentMembers||[]).some(function(a){ return (a.sid && a.sid===s.sid) || (!a.sid && a.name===s.name); }); });
+          }
+          if(ab && !real){ s.excluded = true; s.excludeReason = '활동 미실시'; s.auto = true; changed++; }
+        });
+        if(changed) renderSheet();
+      })
+      .catch(function(){});
   }
 
   function setViewButtons(){
@@ -685,9 +722,13 @@
 
     if(excludedList.length>0){
       html += '<div class="exclude-panel"><div class="exclude-panel-title">제외 학생 사유</div>';
+      if(excludedList.some(function(e){ return current.students[e.idx] && current.students[e.idx].auto; })){
+        html += '<div class="auto-note">학생이 "활동 안 함"으로 제출해서 자동으로 제외했어요. 맞지 않으면 ↺ 버튼으로 복구하세요. 화면 위쪽의 [전송 및 인쇄]를 눌러야 저장돼요.</div>';
+      }
       excludedList.forEach(function(e){
         html += '<div class="exclude-panel-row"><button type="button" class="exclude-x restore-x" data-exclude-idx="'+e.idx+'" title="명단에 복구">↺</button>' +
           '<span class="exclude-panel-name">'+esc(e.name)+' ('+esc(e.sid)+')</span>' +
+          ((current.students[e.idx] && current.students[e.idx].auto) ? '<span class="auto-tag">학생 제출</span>' : '') +
           '<input type="text" class="exclude-reason-input" data-reason-idx="'+e.idx+'" value="'+esc(e.reason)+'" placeholder="예: 활동 미실시"></div>';
       });
       html += '</div>';
@@ -848,7 +889,7 @@
   }
   function lgStatusCard(S){
     var hasReport = S.reports.length>0;
-    var studs = ((current && current.students) || []).filter(function(s){ return !s.excluded; });
+    var studs = ((current && current.students) || []).filter(function(s){ return !s.excluded || s.auto; }); // 자동 제외된 학생도 '활동 안 함(학생 사유)'으로 계속 보여 준다
     var rows = studs.map(function(s){
       var mine = lgStudentLogs(S, s);
       var real = [], ab = null;
@@ -1422,7 +1463,7 @@
         var idx = +btn.getAttribute('data-exclude-idx');
         var s = current.students[idx];
         if(!s) return;
-        s.excluded = !s.excluded;
+        s.excluded = !s.excluded; s.touched = true; s.auto = false;
         if(!s.excluded){ s.excludeReason = ''; }
         renderSheet();
       };
@@ -1455,7 +1496,7 @@
       input.oninput = function(){
         var idx = +input.getAttribute('data-reason-idx');
         var s = current.students[idx];
-        if(s) s.excludeReason = input.value;
+        if(s){ s.excludeReason = input.value; s.touched = true; }
       };
     });
   }
